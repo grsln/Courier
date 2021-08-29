@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List
+from typing import Any, List
 
 import databases
 from fastapi import FastAPI
@@ -19,9 +19,11 @@ deliver = Table(
     "deliver",
     metadata,
     Column("id", String(5), primary_key=True, index=True, unique=True),
-    Column("status",
-           ChoiceType([("to_do", "to_do"), ("in_progress", "in_progress"), ("done", "done")], impl=String()),
-           comment="Статус доставки"),
+    Column(
+        "status",
+        ChoiceType([("to_do", "to_do"), ("in_progress", "in_progress"), ("done", "done")], impl=String()),
+        comment="Статус доставки",
+    ),
 )
 
 engine = create_engine(
@@ -33,17 +35,23 @@ metadata.create_all(engine)
 
 
 class StatusEnum(str, Enum):
-    to_do = 'to_do'
-    in_progress = 'in_progress'
-    done = 'done'
+    """Статусы доставки."""
+
+    to_do = "to_do"
+    in_progress = "in_progress"
+    done = "done"
 
 
 class Deliver(BaseModel):
-    id: constr(regex=r'^[a-z0-9]{2,5}$')
+    """Модель сериализации доставки."""
+
+    id: constr(regex="^[a-z0-9]{2,5}$")  # type: ignore  # noqa: F722
     status: StatusEnum
 
 
 class Error(BaseModel):
+    """Модель сериализации ошибки."""
+
     error_message: str
     error: str
 
@@ -65,40 +73,49 @@ app = FastAPI()
 
 
 @app.on_event("startup")
-async def startup():
+async def startup() -> Any:
+    """Подключение к БД."""
     await database.connect()
 
 
 @app.on_event("shutdown")
-async def shutdown():
+async def shutdown() -> Any:
+    """Отключение от БД."""
     await database.disconnect()
 
 
 @app.get("/deliveries/", response_model=List[Deliver])
-async def get_deliveries():
+async def get_deliveries() -> Any:
+    """Получение списка доставок."""
     query = deliver.select()
     return await database.fetch_all(query)
 
 
-async def get_deliver(id_deliver):
+async def get_deliver(id_deliver: str) -> Any:
+    """Получение доставки с номером id_deliver."""
     query = deliver.select().where(deliver.c.id == id_deliver)
     return await database.fetch_one(query)
 
 
-def next_status(current_status):
-    states = {StatusEnum.to_do: StatusEnum.in_progress, StatusEnum.in_progress: StatusEnum.done,
-              StatusEnum.done: StatusEnum.to_do}
+def next_status(current_status: StatusEnum) -> StatusEnum:
+    """Функция возвращает следующий статус для current_status."""
+    states = {
+        StatusEnum.to_do: StatusEnum.in_progress,
+        StatusEnum.in_progress: StatusEnum.done,
+        StatusEnum.done: StatusEnum.to_do,
+    }
     return states[current_status]
 
 
 @app.post("/deliveries/", response_model=Deliver)
-async def post_deliveries(del_: Deliver):
+async def post_deliveries(del_: Deliver) -> Any:
+    """Создание новой доставки или обновление статуса доставки."""
     founded_deliver = await get_deliver(id_deliver=del_.id)
     if founded_deliver:
-        if next_status(founded_deliver.get('status')) == del_.status:
+        if next_status(founded_deliver.get("status")) == del_.status:
             query = deliver.update().where(deliver.c.id == del_.id).values(status=del_.status)
         else:
-            query = deliver.update().where(deliver.c.id == del_.id).values(status=founded_deliver.get('status'))
+            query = deliver.update().where(deliver.c.id == del_.id).values(status=founded_deliver.get("status"))
     else:
         query = deliver.insert().values(id=del_.id, status=del_.status)
     last_record_id = await database.execute(query)
