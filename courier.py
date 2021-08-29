@@ -56,19 +56,6 @@ class Error(BaseModel):
     error: str
 
 
-# class PostDeliver(GenericModel, Generic[DataT]):
-#     deliveries = Optional[Deliver]
-#     error = Optional[Error]
-#
-#     @validator('error', always=True)
-#     def check_consistency(cls, v, values):
-#         if v is not None and values['deliveries'] is not None:
-#             raise ValueError('must not provide both data and error')
-#         if v is None and values.get('deliveries') is None:
-#             raise ValueError('must provide data or error')
-#         return v
-
-
 app = FastAPI()
 
 
@@ -107,7 +94,7 @@ def next_status(current_status: StatusEnum) -> StatusEnum:
     return states[current_status]
 
 
-@app.post("/deliveries/", response_model=Deliver)
+@app.post("/deliveries/", responses={200: {"model": Deliver}, 400: {"model": Error}, 500: {"model": Error}})
 async def post_deliveries(del_: Deliver) -> Any:
     """Создание новой доставки или обновление статуса доставки."""
     founded_deliver = await get_deliver(id_deliver=del_.id)
@@ -115,11 +102,15 @@ async def post_deliveries(del_: Deliver) -> Any:
         if next_status(founded_deliver.get("status")) == del_.status:
             query = deliver.update().where(deliver.c.id == del_.id).values(status=del_.status)
         else:
-            query = deliver.update().where(deliver.c.id == del_.id).values(status=founded_deliver.get("status"))
+            return {"error_message": "Статус не изменен. Неверный статус.", "error": "Ошибка."}, 400
+            # query = deliver.update().where(deliver.c.id == del_.id).values(status=founded_deliver.get("status"))
     else:
         query = deliver.insert().values(id=del_.id, status=del_.status)
     last_record_id = await database.execute(query)
-    if last_record_id:
-        saved_deliver = get_deliver(id_deliver=del_.id)
-        return saved_deliver
+    if not last_record_id:
+        saved_deliver = await get_deliver(id_deliver=del_.id)
+        if saved_deliver:
+            return saved_deliver
+        else:
+            return {"error_message": "Ошибка сохранения.", "error": "Ошибка."}, 500
     return {**del_.dict()}
