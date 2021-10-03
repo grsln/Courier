@@ -1,0 +1,22 @@
+[tool.vulture]
+exclude = ["tests", "venv"]
+make_whitelist = true
+min_confidence = 70
+sort_by_size = true
+paths = ["main.py"]
+
+[tool.black]
+line-length = 120
+py38 = true
+include = '\.pyi?$'
+exclude = '''
+(
+  /(
+    | .git
+    | .mypy_cache
+    | .tox
+    | venv
+    | tests
+  )/
+)
+'''
